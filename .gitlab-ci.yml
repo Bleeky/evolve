@@ -1,0 +1,37 @@
+stages:
+   - build
+   - deploy
+
+# build stage
+build_app:
+   image: node:10.15.0-stretch
+   stage: build
+   only:
+      refs:
+        - master
+      variables:
+        - $CI_COMMIT_MESSAGE =~ /trigger ci/
+   script:
+      - npm install
+      - npm run build
+   cache:
+     paths:
+       - node_modules/
+   artifacts:
+      paths:
+         # build folder
+         - dist/
+      expire_in: 1 hour
+
+# production stage
+production:
+   image: python:latest
+   stage: deploy
+   only:
+      refs:
+        - master
+      variables:
+        - $CI_COMMIT_MESSAGE =~ /trigger ci/
+   script:
+      - pip install awscli
+      - aws s3 sync ./dist s3://"$S3BUCKET"
