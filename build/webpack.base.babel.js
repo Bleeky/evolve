@@ -33,6 +33,7 @@ export default {
       src: resolve('src'),
       assets: resolve('src/assets'),
       components: resolve('src/components'),
+      tinyqueue: resolve('node_modules/tinyqueue/tinyqueue.js'),
     },
   },
   module: {
@@ -79,6 +80,9 @@ export default {
           limit: 10000,
           name: utils.assetsPath('img/[name].[hash:7].[ext]'),
         },
+        exclude: [
+          path.resolve(__dirname, '../src/assets/models'),
+        ],
       },
       {
         test: /\.(woff2?|eot|ttf|otf)(\?.*)?$/,
@@ -88,6 +92,28 @@ export default {
           limit: 10000,
           name: utils.assetsPath('fonts/[name].[hash:7].[ext]'),
         },
+      },
+      {
+        test: /\.gltf$/,
+        use: [
+          {
+            loader: 'file-loader',
+            options: { esModule: false },
+          },
+          '@vxna/gltf-loader',
+        ],
+      },
+      {
+        test: /\.(bin|jpe?g|png)$/,
+        loader: 'file-loader',
+        options: { esModule: false },
+        include: [
+          path.resolve(__dirname, '../src/assets/models'),
+        ],
+      },
+      {
+        test: /\.worker\.js$/,
+        use: { loader: 'worker-loader' },
       },
     ],
   },
