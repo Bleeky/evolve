@@ -4,6 +4,7 @@ import eslintFriendlyFormatter from 'eslint-friendly-formatter';
 import VueLoaderPlugin from 'vue-loader/lib/plugin';
 import FaviconsWebpackPlugin from 'favicons-webpack-plugin';
 import MiniCssExtractPlugin from 'mini-css-extract-plugin';
+import WasmPackPlugin from '@wasm-tool/wasm-pack-plugin';
 import config from '../config';
 import utils from './utils';
 
@@ -110,6 +111,9 @@ export default {
         include: [
           path.resolve(__dirname, '../src/assets/models'),
         ],
+        exclude: [
+          path.resolve(__dirname, '../src/wasm'),
+        ],
       },
       {
         test: /\.worker\.js$/,
@@ -118,6 +122,13 @@ export default {
     ],
   },
   plugins: [
+    new WasmPackPlugin({
+      crateDirectory: path.resolve(__dirname, '../src/wasm'),
+      watchDirectories: [
+        path.resolve(__dirname, '../src/wasm/src'),
+      ],
+      forceMode: 'production',
+    }),
     new webpack.ProvidePlugin({
       Payload: [path.resolve(__dirname, '../src/utils'), 'default'],
     }),

@@ -11,22 +11,22 @@ module.exports = {
   plugins: [
     'html'
   ],
-  globals: {
-    Payload: true,
-  },
   settings: {
-    'import/resolver': {
-      'webpack': {
-        'config': 'build/webpack.base.babel.js'
-      }
-    }
+    // 'import/ignore': [
+    //   'wasm/',
+    // ],
+    // 'import/resolver': {
+    //   'webpack': {
+    //     'config': 'build/webpack.base.babel.js'
+    //   }
+    // }
   },
   rules: {
     "no-plusplus": 0,
-    'import/extensions': ['error', 'always', {
-      'js': 'never',
-      'vue': 'never'
-    }],
+    // 'import/extensions': ['error', 'always', {
+    //   'js': 'never',
+    //   'vue': 'never'
+    // }],
     'no-debugger': process.env.NODE_ENV === 'production' ? 2 : 0
   }
 }

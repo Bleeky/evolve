@@ -73,7 +73,7 @@
             />
           </template>
           <template v-for="animal in animals">
-            <Model
+            <!-- <Model
               :key="animal.uuid"
               :src="require('assets/models/sheep/scene.gltf')"
               receive-shadow
@@ -81,8 +81,14 @@
               :position="`${animal.x} 0.21 ${animal.y}`"
               scale="0.001 0.001 0.001"
               :rotation="`0 ${animal.angle || 0} 0 ZYX`"
+            /> -->
+            <Blob
+              :key="animal.uuid"
+              :position="`${animal.x} 0 ${animal.y}`"
+              :rotation="`0 ${animal.angle || 0} 0 ZYX`"
             />
           </template>
+
           <vgl-ambient-light
             ref="ambientlight"
             name="ambientlight"
@@ -114,16 +120,28 @@
 <script>
 import RBush from 'rbush';
 import { v4 as uuidv4 } from 'uuid';
+import {
+  MeshBasicMaterial, SphereGeometry, Mesh, PlaneGeometry, Group, MeshLambertMaterial,
+} from 'three';
 import { Sky } from 'three/examples/jsm/objects/Sky';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls';
 
 import Model from 'components/Model';
+import Blob from 'components/Blob';
+import { MarchingCubes } from 'three/examples/jsm/objects/MarchingCubes';
+import * as wasm from 'wasm/pkg';
 import LifeCycleWorker from './lifeCycle.worker';
+
+console.error(wasm.main());
+// import('wasm/pkg').then((wasm) => {
+//   wasm.main();
+// });
 
 export default {
   name: 'Root',
   components: {
     Model,
+    Blob,
   },
   data: () => ({
     tree: new RBush(),
@@ -192,10 +210,12 @@ export default {
       this.setWorker(item);
     });
     setInterval(() => {
-      this.createFood(2);
-      Object.keys(this.workers).forEach((workerKey) => {
-        this.workers[workerKey].postMessage({ type: 'update', tree: this.tree.all() });
-      });
+      if (this.tree.all().filter((treeElem) => treeElem.type === 'food').length < 15) {
+        this.createFood(5);
+        Object.keys(this.workers).forEach((workerKey) => {
+          this.workers[workerKey].postMessage({ type: 'update', tree: this.tree.all() });
+        });
+      }
     }, 2000);
   },
   methods: {
@@ -236,6 +256,9 @@ export default {
             currentItem = { ...currentItem, hasMated: true };
             this.tree.insert(currentItem);
             worker.postMessage({ type: 'update', tree: this.tree.all(), elem: currentItem });
+            Object.keys(this.workers).forEach((workerKey) => {
+              this.workers[workerKey].postMessage({ type: 'update', tree: this.tree.all() });
+            });
             const childrens = this.createAnimals(1, currentItem.x, currentItem.y, Math.random() * 0.2);
             childrens.forEach((child) => { this.setWorker(child); });
             Object.keys(this.workers).forEach((workerKey) => {
@@ -283,8 +306,8 @@ export default {
           type: 'animal',
           gender: 'female',
           speed,
-          health: 4,
-          hasMated: false,
+          health: 3,
+          hasMated: true,
           x,
           y,
           minX: x,

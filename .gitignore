@@ -4,3 +4,6 @@ dist/
 npm-debug.log
 package-lock.json
 config/aws.config.js
+src/wasm/target
+target
+/pkg

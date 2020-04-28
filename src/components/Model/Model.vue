@@ -22,7 +22,7 @@ export default {
           if (child.isMesh) {
             // console.error(child.material.name, child);
             child.frustumCulled = false;
-            child.castShadow = true;
+            // child.castShadow = true;
             child.receiveShadow = true;
             // child.material = INITIAL_MTL;
           }
