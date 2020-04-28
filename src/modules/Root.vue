@@ -1,6 +1,6 @@
 <template>
   <div>
-    <div class="absolute bg-gray-100 top-0 left-0 block z-20">
+    <!-- <div class="absolute bg-gray-100 top-0 left-0 block z-20">
       <button
         class=""
         @click="debug"
@@ -12,7 +12,7 @@
       >
         render
       </button>
-    </div>
+    </div> -->
 
     <div class="renderer-container">
       <vgl-renderer
@@ -62,7 +62,7 @@
             cast-shadow
             receive-shadow
           />
-          <template v-for="f in food">
+          <!-- <template v-for="f in food">
             <Model
               :key="f.uuid"
               :src="require('assets/models/orange/scene.gltf')"
@@ -73,7 +73,7 @@
             />
           </template>
           <template v-for="animal in animals">
-            <!-- <Model
+            <Model
               :key="animal.uuid"
               :src="require('assets/models/sheep/scene.gltf')"
               receive-shadow
@@ -81,13 +81,13 @@
               :position="`${animal.x} 0.21 ${animal.y}`"
               scale="0.001 0.001 0.001"
               :rotation="`0 ${animal.angle || 0} 0 ZYX`"
-            /> -->
+            />
             <Blob
               :key="animal.uuid"
               :position="`${animal.x} 0 ${animal.y}`"
               :rotation="`0 ${animal.angle || 0} 0 ZYX`"
             />
-          </template>
+          </template> -->
 
           <vgl-ambient-light
             ref="ambientlight"
@@ -120,15 +120,10 @@
 <script>
 import RBush from 'rbush';
 import { v4 as uuidv4 } from 'uuid';
-import {
-  MeshBasicMaterial, SphereGeometry, Mesh, PlaneGeometry, Group, MeshLambertMaterial,
-} from 'three';
 import { Sky } from 'three/examples/jsm/objects/Sky';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls';
 
 import Model from 'components/Model';
-import Blob from 'components/Blob';
-import { MarchingCubes } from 'three/examples/jsm/objects/MarchingCubes';
 import * as wasm from 'wasm/pkg';
 import LifeCycleWorker from './lifeCycle.worker';
 
@@ -144,7 +139,9 @@ export default {
     Blob,
   },
   data: () => ({
+    globalIndex: 0,
     tree: new RBush(),
+    blobs: new RBush(),
     workers: {},
   }),
   computed: {
@@ -205,120 +202,46 @@ export default {
       this.$refs.renderer.requestRender();
     }, false);
     this.createFood();
-    this.createAnimals(3);
-    this.tree.all().forEach((item) => {
-      this.setWorker(item);
+    this.blobs = this.createBlobs(3);
+    const length = 3 * 100;
+    const size = Int32Array.BYTES_PER_ELEMENT * length;
+    this.sharedBuffer = new SharedArrayBuffer(size);
+    this.sharedArray = new Int32Array(this.sharedBuffer);
+
+    Object.keys(this.blobs).forEach((blobKey) => {
+      this.setWorker(this.blobs[blobKey], blobKey);
     });
-    setInterval(() => {
-      if (this.tree.all().filter((treeElem) => treeElem.type === 'food').length < 15) {
-        this.createFood(5);
-        Object.keys(this.workers).forEach((workerKey) => {
-          this.workers[workerKey].postMessage({ type: 'update', tree: this.tree.all() });
-        });
-      }
+    console.error(this.blobs);
+    setTimeout(() => {
+      console.error(this.sharedArray);
     }, 2000);
   },
   methods: {
-    debug() {
-      console.error(this.tree.all().filter((elem) => elem.type === 'animal'));
-    },
-    render() {
-      this.$refs.renderer.requestRender();
-    },
-    setWorker(item) {
-      let currentItem = item;
-      if (item.type === 'animal') {
-        const worker = new LifeCycleWorker();
-        worker.postMessage({ type: 'update', tree: this.tree.all(), elem: item });
-        worker.addEventListener('message', (e) => {
-          if (e.data.type === 'move') {
-            this.tree.remove(currentItem);
-            currentItem = {
-              ...currentItem,
-              ...e.data.newPosition,
-              angle: e.data.angle,
-              minX: e.data.newPosition.x,
-              minY: e.data.newPosition.y,
-              maxX: e.data.newPosition.x,
-              maxY: e.data.newPosition.y,
-            };
-            this.tree.insert(currentItem);
-            worker.postMessage({
-              type: 'update', tree: this.tree.all(), elem: currentItem,
-            });
-          } else if (e.data.type === 'eat' && this.tree.all().find((elem) => elem.uuid === e.data.food.uuid)) {
-            // console.error('sheep eat', currentItem.uuid, currentItem);
-            this.tree.remove(e.data.food, (a, b) => a.uuid === b.uuid);
-            worker.postMessage({ type: 'update', tree: this.tree.all(), elem: currentItem });
-          } else if (e.data.type === 'mate') {
-            console.error('we mated', currentItem);
-            this.tree.remove(currentItem);
-            currentItem = { ...currentItem, hasMated: true };
-            this.tree.insert(currentItem);
-            worker.postMessage({ type: 'update', tree: this.tree.all(), elem: currentItem });
-            Object.keys(this.workers).forEach((workerKey) => {
-              this.workers[workerKey].postMessage({ type: 'update', tree: this.tree.all() });
-            });
-            const childrens = this.createAnimals(1, currentItem.x, currentItem.y, Math.random() * 0.2);
-            childrens.forEach((child) => { this.setWorker(child); });
-            Object.keys(this.workers).forEach((workerKey) => {
-              this.workers[workerKey].postMessage({ type: 'update', tree: this.tree.all() });
-            });
-          } else if (e.data.type === 'died') {
-            console.error('sheep died', e.data.elem.uuid, this.tree.all().filter((elem) => elem.type === 'animal'));
-            worker.postMessage({ type: 'kill' });
-            setTimeout(() => {
-              this.tree.remove(e.data.elem, (a, b) => a.uuid === b.uuid);
-            }, Math.random() * 2);
-            delete this.workers[currentItem.uuid];
-            Object.keys(this.workers).forEach((workerKey) => {
-              this.workers[workerKey].postMessage({ type: 'update', tree: this.tree.all() });
-            });
-            this.$refs.renderer.requestRender();
-          }
-        }, false);
-        this.workers = { ...this.workers, [item.uuid]: worker };
-      }
+    setWorker(blob, blobID) {
+      const worker = new LifeCycleWorker();
+      console.error(blobID, blob.x, blob.y);
+      Atomics.store(this.sharedArray, blobID, blobID);
+      Atomics.store(this.sharedArray, blobID + 1, blob.x);
+      Atomics.store(this.sharedArray, blobID + 2, blob.y);
+      worker.postMessage(this.sharedBuffer);
+      this.blobs[blobID] = { ...blob, data: this.sharedArray };
+      this.workers = { ...this.workers, [blob.uuid]: worker };
     },
     createFood(quantity = 5) {
       for (let index = 0; index < quantity; index++) {
         const x = Math.random() * 5 * (Math.floor(Math.random() * 2) === 1 ? 1 : -1);
         const y = Math.random() * 5 * (Math.floor(Math.random() * 2) === 1 ? 1 : -1);
-        this.tree.insert({
-          uuid: uuidv4(),
-          x,
-          y,
-          minX: x - 0.2,
-          minY: y - 0.2,
-          maxX: x + 0.2,
-          maxY: y + 0.2,
-          type: 'food',
-        });
       }
     },
-    createAnimals(quantity = 1, coordX, coordY, speed = 0.1) {
-      let newAnimals = [];
+    createBlobs(quantity = 1) {
+      let blobs = {};
       for (let index = 0; index < quantity; index++) {
-        const x = coordX || Math.random() * 5 * (Math.floor(Math.random() * 2) === 1 ? 1 : -1);
-        const y = coordY || Math.random() * 5 * (Math.floor(Math.random() * 2) === 1 ? 1 : -1);
-        const newItem = {
-          uuid: uuidv4(),
-          type: 'animal',
-          gender: 'female',
-          speed,
-          health: 3,
-          hasMated: true,
-          x,
-          y,
-          minX: x,
-          minY: y,
-          maxX: x,
-          maxY: y,
-        };
-        this.tree.insert(newItem);
-        newAnimals = [...newAnimals, newItem];
+        const x = Math.random() * 5 * (Math.floor(Math.random() * 2) === 1 ? 1 : -1);
+        const y = Math.random() * 5 * (Math.floor(Math.random() * 2) === 1 ? 1 : -1);
+        blobs = { ...blobs, [this.globalIndex]: { x: Math.round(x), y: Math.round(y) } };
+        this.globalIndex += 3;
       }
-      return newAnimals;
+      return blobs;
     },
   },
 };
