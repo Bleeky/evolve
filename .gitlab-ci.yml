@@ -13,6 +13,7 @@ build_app:
         - $CI_COMMIT_MESSAGE =~ /trigger ci/
    script:
       - curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+      - echo "export PATH=~/.cargo/bin:$PATH" >> ~/.bashrc
       - npm install
       - npm run build
    cache:
