@@ -1,16 +1,30 @@
 <template>
   <div>
-    <div class="absolute bg-gray-100 top-0 left-0 block z-20">
+    <div class="absolute top-0 left-0 block z-20 p-2">
       <button
-        class=""
-        @click="debug"
+        class="p-2 mr-1 border border-gray-900 rounded"
+        @click="play"
       >
-        Debug
+        Play
       </button>
       <button
-        @click="render"
+        class="p-2 mr-1 border border-gray-900 rounded"
+        @click="pause"
       >
-        render
+        Pause
+      </button>
+      <button
+        class="p-2 mr-1 border border-gray-900 rounded"
+        @click="restart"
+      >
+        Restart
+      </button>
+      <button
+        class="p-2 mr-1 border border-gray-900 rounded"
+
+        @click="stop"
+      >
+        Stop
       </button>
     </div>
 
@@ -45,8 +59,6 @@
           <vgl-grid-helper
             :size="10"
             :divisions="10"
-            :color-center-line="`rgb(25, 255, 255)`"
-            :color-grid="`rgb(255, 255, 255)`"
           />
           <vgl-mesh
             ref="plane"
@@ -62,17 +74,17 @@
             cast-shadow
             receive-shadow
           />
-          <template v-for="f in food">
+          <template v-for="food in foods">
             <Model
-              :key="f.uuid"
+              :key="food.uuid"
               :src="require('assets/models/orange/scene.gltf')"
               scale="3 3 3"
               receive-shadow
               cast-shadow
-              :position="`${f.x} 0 ${f.y}`"
+              :position="`${food.x} 0 ${food.y}`"
             />
           </template>
-          <template v-for="animal in animals">
+          <template v-for="blob in blobs">
             <!-- <Model
               :key="animal.uuid"
               :src="require('assets/models/sheep/scene.gltf')"
@@ -83,12 +95,15 @@
               :rotation="`0 ${animal.angle || 0} 0 ZYX`"
             /> -->
             <Blob
-              :key="animal.uuid"
-              :position="`${animal.x} 0 ${animal.y}`"
-              :rotation="`0 ${animal.angle || 0} 0 ZYX`"
+              :key="blob.uuid"
+              :position="`${blob.x} 0 ${blob.y}`"
+              :rotation="`0 ${blob.angle || 0} 0 ZYX`"
             />
           </template>
-
+          <!-- <Blob
+            :position="`3 0 2`"
+            :rotation="`0 ${angleTest || 0} 0 ZYX`"
+          /> -->
           <vgl-ambient-light
             ref="ambientlight"
             name="ambientlight"
@@ -118,24 +133,18 @@
 </template>
 
 <script>
-import RBush from 'rbush';
 import { v4 as uuidv4 } from 'uuid';
-import {
-  MeshBasicMaterial, SphereGeometry, Mesh, PlaneGeometry, Group, MeshLambertMaterial,
-} from 'three';
 import { Sky } from 'three/examples/jsm/objects/Sky';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls';
 
 import Model from 'components/Model';
 import Blob from 'components/Blob';
-import { MarchingCubes } from 'three/examples/jsm/objects/MarchingCubes';
 import * as wasm from 'wasm/pkg';
-import LifeCycleWorker from './lifeCycle.worker';
+import { LifeWorker, MatingWorker } from 'workers';
+import knn from 'rbush-knn';
+import MyRBush from 'utils/myRBush';
 
 console.error(wasm.main());
-// import('wasm/pkg').then((wasm) => {
-//   wasm.main();
-// });
 
 export default {
   name: 'Root',
@@ -144,15 +153,17 @@ export default {
     Blob,
   },
   data: () => ({
-    tree: new RBush(),
-    workers: {},
+    tree: new MyRBush(),
+    blobsStructs: {},
+    blobsWorkers: {},
+    angleTest: 2.6,
   }),
   computed: {
-    food() {
-      return this.tree.all().filter((item) => item.type === 'food');
+    blobs() {
+      return this.tree.all().filter((elem) => elem.type === 'blob');
     },
-    animals() {
-      return this.tree.all().filter((item) => item.type === 'animal');
+    foods() {
+      return this.tree.all().filter((elem) => elem.type === 'food');
     },
   },
   mounted() {
@@ -173,27 +184,14 @@ export default {
     const theta = Math.PI * (0.40 - 0.5); // Inclination
     const phi = 2 * Math.PI * (0.25 - 0.5); // Azimuth
 
-    uniforms.sunPosition.value.copy({
-      x: distance * Math.cos(phi),
-      y: distance * Math.sin(phi) * Math.sin(theta),
-      z: distance * Math.sin(phi) * Math.cos(theta),
-    });
+    uniforms.sunPosition.value.copy(this.generatePosition(distance, phi, theta));
     if (this.$refs.light) {
-      this.$refs.light.inst.position.copy({
-        x: (distance / 20) * Math.cos(phi),
-        y: (distance / 20) * Math.sin(phi) * Math.sin(theta),
-        z: (distance / 20) * Math.sin(phi) * Math.cos(theta),
-      });
+      this.$refs.light.inst.position.copy(this.generatePosition(distance / 20, phi, theta));
     }
     if (this.$refs.ambientlight) {
-      this.$refs.ambientlight.inst.position.copy({
-        x: (distance / 20) * Math.cos(phi),
-        y: (distance / 20) * Math.sin(phi) * Math.sin(theta),
-        z: (distance / 20) * Math.sin(phi) * Math.cos(theta),
-      });
+      this.$refs.ambientlight.inst.position.copy(this.generatePosition(distance / 20, phi, theta));
     }
     this.$refs.renderer.inst.render(this.$refs.scene.inst, this.$refs.camera.inst);
-
     this.controls = new OrbitControls(this.$refs.camera.inst, document.querySelector('.renderer'));
     this.controls.addEventListener('change', () => {
       this.$refs.renderer.requestRender();
@@ -204,121 +202,174 @@ export default {
       this.$refs.renderer.inst.setSize(window.innerWidth, window.innerHeight);
       this.$refs.renderer.requestRender();
     }, false);
-    this.createFood();
-    this.createAnimals(3);
-    this.tree.all().forEach((item) => {
-      this.setWorker(item);
+
+    this.generateBlobs(1);
+    this.generateFoods(3);
+    Object.keys(this.blobsStructs).forEach((blobKey) => {
+      this.setBlobWorker(blobKey);
     });
-    setInterval(() => {
-      if (this.tree.all().filter((treeElem) => treeElem.type === 'food').length < 15) {
-        this.createFood(5);
-        Object.keys(this.workers).forEach((workerKey) => {
-          this.workers[workerKey].postMessage({ type: 'update', tree: this.tree.all() });
-        });
-      }
-    }, 2000);
   },
   methods: {
-    debug() {
-      console.error(this.tree.all().filter((elem) => elem.type === 'animal'));
-    },
-    render() {
+    stop() {
+      this.tree.clear();
+      Object.keys(this.blobsWorkers).forEach((workerKey) => {
+        this.blobsWorkers[workerKey].postMessage({ type: 'kill' });
+      });
+      this.blobsWorkers = {};
+      this.blobsStructs = {};
+      this.foodsStructs = {};
       this.$refs.renderer.requestRender();
     },
-    setWorker(item) {
-      let currentItem = item;
-      if (item.type === 'animal') {
-        const worker = new LifeCycleWorker();
-        worker.postMessage({ type: 'update', tree: this.tree.all(), elem: item });
-        worker.addEventListener('message', (e) => {
-          if (e.data.type === 'move') {
-            this.tree.remove(currentItem);
-            currentItem = {
-              ...currentItem,
-              ...e.data.newPosition,
-              angle: e.data.angle,
-              minX: e.data.newPosition.x,
-              minY: e.data.newPosition.y,
-              maxX: e.data.newPosition.x,
-              maxY: e.data.newPosition.y,
-            };
-            this.tree.insert(currentItem);
-            worker.postMessage({
-              type: 'update', tree: this.tree.all(), elem: currentItem,
+    restart() {
+      this.stop();
+      console.clear();
+      this.generateBlobs(1);
+      this.generateFoods(3);
+      Object.keys(this.blobsStructs).forEach((blobKey) => {
+        this.setBlobWorker(blobKey);
+      });
+    },
+    pause() {
+      console.warn('Simulation was paused');
+      Object.keys(this.blobsWorkers).forEach((workerKey) => {
+        this.blobsWorkers[workerKey].postMessage({ type: 'pause' });
+      });
+    },
+    play() {
+      Object.keys(this.blobsWorkers).forEach((workerKey) => {
+        this.blobsWorkers[workerKey].postMessage({ type: 'play' });
+      });
+    },
+    setBlobWorker(blobKey) {
+      const blobWorker = new LifeWorker();
+      blobWorker.postMessage({
+        type: 'update',
+        tree: this.tree.all(),
+        blob: this.blobsStructs[blobKey],
+      });
+      blobWorker.addEventListener('message', (event) => {
+        switch (event.data.type) {
+          case 'move': {
+            let shouldPause;
+            this.tree.remove(this.blobsStructs[event.data.blob.uuid]);
+            const closeBy = this.tree.search({
+              minX: this.blobsStructs[event.data.blob.uuid].x - this.blobsStructs[event.data.blob.uuid].fov,
+              minY: this.blobsStructs[event.data.blob.uuid].y - this.blobsStructs[event.data.blob.uuid].fov,
+              maxX: this.blobsStructs[event.data.blob.uuid].x + this.blobsStructs[event.data.blob.uuid].fov,
+              maxY: this.blobsStructs[event.data.blob.uuid].y + this.blobsStructs[event.data.blob.uuid].fov,
             });
-          } else if (e.data.type === 'eat' && this.tree.all().find((elem) => elem.uuid === e.data.food.uuid)) {
-            // console.error('sheep eat', currentItem.uuid, currentItem);
-            this.tree.remove(e.data.food, (a, b) => a.uuid === b.uuid);
-            worker.postMessage({ type: 'update', tree: this.tree.all(), elem: currentItem });
-          } else if (e.data.type === 'mate') {
-            console.error('we mated', currentItem);
-            this.tree.remove(currentItem);
-            currentItem = { ...currentItem, hasMated: true };
-            this.tree.insert(currentItem);
-            worker.postMessage({ type: 'update', tree: this.tree.all(), elem: currentItem });
-            Object.keys(this.workers).forEach((workerKey) => {
-              this.workers[workerKey].postMessage({ type: 'update', tree: this.tree.all() });
-            });
-            const childrens = this.createAnimals(1, currentItem.x, currentItem.y, Math.random() * 0.2);
-            childrens.forEach((child) => { this.setWorker(child); });
-            Object.keys(this.workers).forEach((workerKey) => {
-              this.workers[workerKey].postMessage({ type: 'update', tree: this.tree.all() });
-            });
-          } else if (e.data.type === 'died') {
-            console.error('sheep died', e.data.elem.uuid, this.tree.all().filter((elem) => elem.type === 'animal'));
-            worker.postMessage({ type: 'kill' });
-            setTimeout(() => {
-              this.tree.remove(e.data.elem, (a, b) => a.uuid === b.uuid);
-            }, Math.random() * 2);
-            delete this.workers[currentItem.uuid];
-            Object.keys(this.workers).forEach((workerKey) => {
-              this.workers[workerKey].postMessage({ type: 'update', tree: this.tree.all() });
-            });
-            this.$refs.renderer.requestRender();
+            if (closeBy.find((element) => element.type === 'food')) {
+              const closestFood = knn(this.tree, this.blobsStructs[event.data.blob.uuid].x, this.blobsStructs[event.data.blob.uuid].y, 1, (item) => item.type === 'food');
+              if (Math.abs(closestFood[0].x - this.blobsStructs[event.data.blob.uuid].x) < 0.1 && Math.abs(closestFood[0].y - this.blobsStructs[event.data.blob.uuid].y) < 0.1) {
+                console.error('Eating objective.', closestFood[0]);
+                if (this.blobsStructs[event.data.blob.uuid].objectives[closestFood[0].uuid]) {
+                  this.tree.remove(closestFood[0]);
+                  delete this.foodsStructs[closestFood[0].uuid];
+                  delete this.blobsStructs[event.data.blob.uuid].objectives[closestFood[0].uuid];
+                  blobWorker.postMessage({
+                    type: 'removeObjective',
+                    objective: closestFood[0],
+                  });
+                }
+              } else if (!Object.keys(this.blobsStructs[event.data.blob.uuid].objectives).length) {
+                console.error('addingObjective.', closestFood[0].uuid, `angle ${-Math.atan2(closestFood[0].y - this.blobsStructs[event.data.blob.uuid].y, closestFood[0].x - this.blobsStructs[event.data.blob.uuid].x)}`);
+                this.blobsStructs[event.data.blob.uuid] = {
+                  ...this.blobsStructs[event.data.blob.uuid],
+                  angle: -Math.atan2(closestFood[0].y - this.blobsStructs[event.data.blob.uuid].y, closestFood[0].x - this.blobsStructs[event.data.blob.uuid].x),
+                  objectives: { ...this.blobsStructs[event.data.blob.uuid].objectives, [closestFood[0].uuid]: closestFood[0] },
+                };
+                blobWorker.postMessage({
+                  type: 'addObjective',
+                  objective: closestFood[0],
+                });
+                shouldPause = true;
+              }
+            }
+            const sin = Math.abs(Math.sin(this.blobsStructs[event.data.blob.uuid].angle));
+            const newX = this.blobsStructs[event.data.blob.uuid].x + (Math.cos(this.blobsStructs[event.data.blob.uuid].angle) * 0.1);
+            const newY = this.blobsStructs[event.data.blob.uuid].angle < 0 ? this.blobsStructs[event.data.blob.uuid].y + (sin * 0.1) : this.blobsStructs[event.data.blob.uuid].y - (sin * 0.1);
+            if (newX < 5 && newY < 5 && newX > -5 && newY > -5) {
+              this.blobsStructs[event.data.blob.uuid] = {
+                ...this.blobsStructs[event.data.blob.uuid],
+                x: newX,
+                y: newY,
+              };
+            } else {
+              console.warn('generate random radian, got out of bounds.');
+              this.blobsStructs[event.data.blob.uuid] = {
+                ...this.blobsStructs[event.data.blob.uuid],
+                angle: this.generateRandomRadian(),
+              };
+            }
+            this.tree.insert(this.blobsStructs[event.data.blob.uuid]);
+            if (shouldPause) this.pause();
+            break;
           }
-        }, false);
-        this.workers = { ...this.workers, [item.uuid]: worker };
-      }
+          case 'changeDirection': {
+            if (!Object.keys(this.blobsStructs[event.data.blob.uuid].objectives).length) {
+              console.error('change direction');
+              this.tree.remove(this.blobsStructs[event.data.blob.uuid]);
+              this.blobsStructs[event.data.blob.uuid] = {
+                ...this.blobsStructs[event.data.blob.uuid],
+                angle: this.generateRandomRadian(),
+              };
+              this.tree.insert(this.blobsStructs[event.data.blob.uuid]);
+            }
+            break;
+          }
+          default:
+            break;
+        }
+      });
+      this.blobsWorkers = { ...this.blobsWorkers, [blobKey]: blobWorker };
     },
-    createFood(quantity = 5) {
+    generateBlobs(quantity = 5) {
+      let blobs = [];
       for (let index = 0; index < quantity; index++) {
-        const x = Math.random() * 5 * (Math.floor(Math.random() * 2) === 1 ? 1 : -1);
-        const y = Math.random() * 5 * (Math.floor(Math.random() * 2) === 1 ? 1 : -1);
-        this.tree.insert({
-          uuid: uuidv4(),
-          x,
-          y,
-          minX: x - 0.2,
-          minY: y - 0.2,
-          maxX: x + 0.2,
-          maxY: y + 0.2,
-          type: 'food',
-        });
-      }
-    },
-    createAnimals(quantity = 1, coordX, coordY, speed = 0.1) {
-      let newAnimals = [];
-      for (let index = 0; index < quantity; index++) {
-        const x = coordX || Math.random() * 5 * (Math.floor(Math.random() * 2) === 1 ? 1 : -1);
-        const y = coordY || Math.random() * 5 * (Math.floor(Math.random() * 2) === 1 ? 1 : -1);
-        const newItem = {
-          uuid: uuidv4(),
-          type: 'animal',
-          gender: 'female',
-          speed,
-          health: 3,
-          hasMated: true,
-          x,
-          y,
-          minX: x,
-          minY: y,
-          maxX: x,
-          maxY: y,
+        const uuid = uuidv4();
+        const blob = {
+          uuid,
+          type: 'blob',
+          x: this.generateRandomPosition(),
+          y: this.generateRandomPosition(),
+          angle: this.generateRandomRadian(),
+          objectives: {},
+          fov: 3,
         };
-        this.tree.insert(newItem);
-        newAnimals = [...newAnimals, newItem];
+        blobs = [...blobs, blob];
+        this.blobsStructs = { ...this.blobsStructs, [uuid]: blob };
       }
-      return newAnimals;
+      this.tree.load(blobs);
+    },
+    generateFoods(quantity = 5) {
+      let foods = [];
+      for (let index = 0; index < quantity; index++) {
+        const uuid = uuidv4();
+        const food = {
+          uuid,
+          type: 'food',
+          x: this.generateRandomPosition(),
+          y: this.generateRandomPosition(),
+        };
+        foods = [...foods, food];
+        this.foodsStructs = { ...this.foodsStructs, [uuid]: food };
+      }
+      this.tree.load(foods);
+    },
+    generateRandomRadian() {
+      return Math.random() * Math.PI * (Math.floor(Math.random() * 2) === 1 ? 1 : -1);
+      // return Math.random() * Math.PI * 2;
+    },
+    generateRandomPosition() {
+      const random = Math.random() * 5 * (Math.floor(Math.random() * 2) === 1 ? 1 : -1);
+      return parseFloat(random.toFixed(1));
+    },
+    generatePosition(distance, phi, theta) {
+      return ({
+        x: distance * Math.cos(phi),
+        y: distance * Math.sin(phi) * Math.sin(theta),
+        z: distance * Math.sin(phi) * Math.cos(theta),
+      });
     },
   },
 };
