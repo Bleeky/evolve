@@ -1,8 +1,9 @@
+extern crate rand;
 extern crate wasm_bindgen;
-use std::thread;
+use rand::Rng;
 #[allow(unused_imports)]
 use wasm_bindgen::prelude::*;
-use web_sys::{Worker};
+use web_sys::Worker;
 
 #[cfg(feature = "wee_alloc")]
 #[global_allocator]
@@ -42,4 +43,12 @@ extern "C" {
 pub fn main() -> i32 {
   log("Hello from Rust!");
   5
+}
+
+#[wasm_bindgen]
+pub fn generate_random_rad() -> f32 {
+  let mut rng = rand::thread_rng();
+  let i = std::f32::consts::PI;
+
+  rng.gen_range(-i, i)
 }

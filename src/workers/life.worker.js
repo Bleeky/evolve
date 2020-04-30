@@ -1,13 +1,9 @@
-import MyRBush from 'utils/myRBush';
-import knn from 'rbush-knn';
-
 let pause;
 
 let moveInterval;
 let changeDirectionInterval;
 let looseLifeInterval;
 
-// let tree;
 let blob;
 let objectives = {};
 
@@ -15,9 +11,12 @@ self.addEventListener('message', (e) => {
   switch (e.data.type) {
     case 'update':
     {
-      // tree = new MyRBush();
-      // tree = tree.load(e.data.tree);
       blob = e.data.blob;
+      moveInterval = setInterval(() => {
+        if (!pause) {
+          self.postMessage({ type: 'move', blob });
+        }
+      }, blob.speed || 60);
       break;
     }
     case 'addObjective': {
@@ -52,16 +51,10 @@ self.addEventListener('message', (e) => {
   }
 }, false);
 
-moveInterval = setInterval(() => {
-  if (!pause) {
-    self.postMessage({ type: 'move', blob });
-  }
-}, 50);
-
 changeDirectionInterval = setInterval(() => {
   if (!pause && !Object.keys(objectives).length) self.postMessage({ type: 'changeDirection', blob });
-}, 2000);
+}, 3000);
 
 looseLifeInterval = setInterval(() => {
   if (!pause) self.postMessage({ type: 'looseLife', blob });
-}, 2000);
+}, 3000);

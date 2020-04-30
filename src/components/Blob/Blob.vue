@@ -1,7 +1,7 @@
 <script>
 import {
   Object3D,
-  MeshBasicMaterial, SphereGeometry, Mesh, PlaneGeometry, Group, MeshLambertMaterial,
+  MeshBasicMaterial, SphereGeometry, Mesh, Group, MeshLambertMaterial, Color,
 } from 'three';
 import { MarchingCubes } from 'three/examples/jsm/objects/MarchingCubes';
 import { VglObject3d } from 'vue-gl';
@@ -9,6 +9,18 @@ import { VglObject3d } from 'vue-gl';
 export default {
   name: 'Blob',
   mixins: [VglObject3d],
+  props: {
+    blob: {
+      type: Object,
+      required: true,
+    },
+  },
+  data() {
+    return {
+      fov: 3,
+      size: 2,
+    };
+  },
   computed: {
     inst() {
       function makeEye(size) {
@@ -17,20 +29,19 @@ export default {
         return new Mesh(geo, material);
       }
 
-      function makeDeadEye(size) {
-        const material = new MeshBasicMaterial({ color: 0x888888 });
-        const thickness = size / 8;
-        const h = new Mesh(new PlaneGeometry(size, thickness), material);
-        h.rotation.set(0, Math.PI / 2, 0);
-        const v = new Mesh(new PlaneGeometry(thickness, size), material);
-        v.rotation.set(0, Math.PI / 2, 0);
-        const g = new Group();
-        g.add(h, v);
-        return g;
-      }
+      // function makeDeadEye(size) {
+      //   const material = new MeshBasicMaterial({ color: 0x888888 });
+      //   const thickness = size / 8;
+      //   const h = new Mesh(new PlaneGeometry(size, thickness), material);
+      //   h.rotation.set(0, Math.PI / 2, 0);
+      //   const v = new Mesh(new PlaneGeometry(thickness, size), material);
+      //   v.rotation.set(0, Math.PI / 2, 0);
+      //   const g = new Group();
+      //   g.add(h, v);
+      //   return g;
+      // }
 
-      function createBlobCreatureParts() {
-        const size = 2;
+      function createBlobCreatureParts(fov, size) {
         const resolution = 160;
         const isolation = 300;
         const effect = new MarchingCubes(resolution, new MeshBasicMaterial(), true, true);
@@ -45,7 +56,8 @@ export default {
 
         const geo = effect.generateBufferGeometry();
         effect.material.dispose();
-        const material = new MeshLambertMaterial({ color: 0xf2f2ff });
+        const color = new Color(`hsl(0, 100%, ${Math.round(50 + (((fov - 3) * 10) * 20))}%)`);
+        const material = new MeshLambertMaterial({ color });
         const blob = new Mesh(geo, material);
         blob.name = 'blob';
         blob.scale.set(size, size, size);
@@ -78,7 +90,7 @@ export default {
         // return [blob, left, right, rightDead, leftDead];
       }
 
-      const cachedBlobParts = createBlobCreatureParts();
+      const cachedBlobParts = createBlobCreatureParts(this.fov, this.size);
 
       const createBlob = () => cachedBlobParts.reduce(
         (group, part) => group.add(part.clone(true)),
@@ -91,6 +103,10 @@ export default {
       this.vglObject3d.emit();
       return object;
     },
+  },
+  created() {
+    this.size = this.blob.size;
+    this.fov = this.blob.fov;
   },
 };
 </script>

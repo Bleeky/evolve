@@ -34,4 +34,5 @@ production:
         - $CI_COMMIT_MESSAGE =~ /trigger ci/
    script:
       - pip install awscli
+      - aws s3 rm s3://"$S3BUCKET" --recursive
       - aws s3 sync ./dist s3://"$S3BUCKET"
