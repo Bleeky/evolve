@@ -48,7 +48,7 @@ pub fn main() -> i32 {
 #[wasm_bindgen]
 pub fn generate_random_rad() -> f32 {
   let mut rng = rand::thread_rng();
-  let i = std::f32::consts::PI;
+  let i = std::f32::consts::PII;
 
   rng.gen_range(-i, i)
 }
