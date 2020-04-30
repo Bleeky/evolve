@@ -5,8 +5,9 @@ let pause;
 
 let moveInterval;
 let changeDirectionInterval;
+let looseLifeInterval;
 
-let tree;
+// let tree;
 let blob;
 let objectives = {};
 
@@ -14,8 +15,8 @@ self.addEventListener('message', (e) => {
   switch (e.data.type) {
     case 'update':
     {
-      tree = new MyRBush();
-      tree = tree.load(e.data.tree);
+      // tree = new MyRBush();
+      // tree = tree.load(e.data.tree);
       blob = e.data.blob;
       break;
     }
@@ -34,6 +35,7 @@ self.addEventListener('message', (e) => {
     case 'kill': {
       clearInterval(moveInterval);
       clearInterval(changeDirectionInterval);
+      clearInterval(looseLifeInterval);
       self.close();
       break;
     }
@@ -58,4 +60,8 @@ moveInterval = setInterval(() => {
 
 changeDirectionInterval = setInterval(() => {
   if (!pause && !Object.keys(objectives).length) self.postMessage({ type: 'changeDirection', blob });
+}, 2000);
+
+looseLifeInterval = setInterval(() => {
+  if (!pause) self.postMessage({ type: 'looseLife', blob });
 }, 2000);
