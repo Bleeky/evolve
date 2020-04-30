@@ -13,9 +13,7 @@ build_app:
         - $CI_COMMIT_MESSAGE =~ /trigger ci/
    script:
       - curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
-      - echo "export PATH=~/.cargo/bin:$PATH" >> ~/.bashrc
       - export PATH=~/.cargo/bin:$PATH
-      - curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
       - curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
       - npm install
       - npm run build
@@ -39,5 +37,5 @@ production:
         - $CI_COMMIT_MESSAGE =~ /trigger ci/
    script:
       - pip install awscli
-      # - aws s3 rm s3://"$S3BUCKET" --recursive
-      # - aws s3 sync ./dist s3://"$S3BUCKET"
+      - aws s3 rm s3://"$S3BUCKET" --recursive
+      - aws s3 sync ./dist s3://"$S3BUCKET"
