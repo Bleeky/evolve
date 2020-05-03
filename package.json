@@ -3,7 +3,6 @@
   "version": "1.0.0",
   "description": "A ThreeJS project with evolving creatures.",
   "author": "Bleeky",
-  "private": true,
   "scripts": {
     "check-dep": "npm-check -u",
     "dev": "webpack-dev-server --config ./build/webpack.dev.babel.js",
