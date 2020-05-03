@@ -3,6 +3,7 @@ import Vuex from 'vuex';
 
 import errors from 'store/modules/errors';
 import modal from 'store/modules/modal';
+import simulation from 'store/modules/simulation';
 
 Vue.use(Vuex);
 
@@ -11,6 +12,7 @@ const store = new Vuex.Store({
   modules: {
     errors,
     modal,
+    simulation,
   },
   plugins: [
   ],

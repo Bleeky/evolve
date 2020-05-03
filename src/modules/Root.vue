@@ -1,50 +1,44 @@
 <template>
   <div>
-    <div class="absolute top-0 left-0 block z-20 p-2">
-      <button
-        class="p-2 mr-1 border border-gray-900 rounded"
-        @click="play"
-      >
-        Play
-      </button>
-      <button
-        class="p-2 mr-1 border border-gray-900 rounded"
-        @click="pause"
-      >
-        Pause
-      </button>
-      <button
-        class="p-2 mr-1 border border-gray-900 rounded"
-        @click="restart"
-      >
-        Restart
-      </button>
-      <button
-        class="p-2 mr-1 border border-gray-900 rounded"
+    <Controls
+      @restart="restart"
+      @stop="stop"
+    />
 
-        @click="stop"
-      >
-        Stop
-      </button>
+    <div
+      v-if="selectedBlob"
+      class="absolute bottom-0 w-full z-40"
+    >
+      <div class="bg-gray-600 w-64 m-auto p-4 border rounded mb-2">
+        <div class="text-xl text-center">
+          Blob details
+        </div>
+        <ul>
+          <li>
+            <span class="font-bold">Life:</span> {{ selectedBlob.life }}
+          </li>
+          <li>
+            <span class="font-bold">FOV:</span> {{ selectedBlob.fov.toFixed(2) }}
+          </li>
+          <li>
+            <span class="font-bold">Size:</span> {{ selectedBlob.size.toFixed(2) }}
+          </li>
+        </ul>
+      </div>
     </div>
 
-    <div class="renderer-container">
+    <div
+      ref="container"
+      class="renderer-container"
+    >
       <vgl-renderer
         ref="renderer"
-        antialias
-        shadow-map-enabled
         class="renderer"
         camera="mainCamera"
         scene="mainScene"
-        precision="highp"
-        power-preference="low-power"
+        :antialias="settings.antialias"
+        :shadow-map-enabled="settings.shadows"
       >
-        <vgl-box-geometry
-          name="box"
-          :height="0.2"
-          :width="0.2"
-          :depth="0.2"
-        />
         <vgl-plane-geometry
           name="plane"
           :width="10"
@@ -59,6 +53,12 @@
           <!-- <vgl-grid-helper
             :size="10"
             :divisions="10"
+          /> -->
+          <!-- <vgl-directional-light-helper
+            ref="lighthelper"
+            color="rgb(255,20,147)"
+            light="light"
+            :size="1"
           /> -->
           <vgl-mesh
             ref="plane"
@@ -96,12 +96,6 @@
             intensity="1"
             cast-shadow
           />
-          <!-- <vgl-directional-light-helper
-            ref="lighthelper"
-            color="rgb(255,20,147)"
-            light="light"
-            :size="1"
-          /> -->
         </vgl-scene>
         <vgl-perspective-camera
           ref="camera"
@@ -117,29 +111,42 @@
 import { v4 as uuidv4 } from 'uuid';
 import { Sky } from 'three/examples/jsm/objects/Sky';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls';
+import Stats from 'three/examples/jsm/libs/stats.module';
 
+import Controls from 'modules/Controls';
 import Model from 'components/Model';
 import Blob from 'components/Blob';
 // import * as wasm from 'wasm/pkg';
-import { LifeWorker, MatingWorker, FoodWorker } from 'workers';
+import { LifeWorker, FoodWorker } from 'workers';
+import generateMixin from 'mixins/generateMixin';
+import {
+  BASE_FOV, BASE_LIFE, BASE_SPEED, BASE_SIZE,
+} from 'utils/consts';
+import PickHelper from 'utils/pickHelper';
 import knn from 'rbush-knn';
 import MyRBush from 'utils/myRBush';
 
 // console.error(wasm.main());
 // wasm.browser_debug();
 
-
 export default {
   name: 'Root',
   components: {
     Model,
     Blob,
+    Controls,
   },
+  mixins: [generateMixin],
   data: () => ({
     tree: new MyRBush(),
     blobsStructs: {},
     blobsWorkers: {},
-    angleTest: 2.6,
+    consoleEnabled: false,
+    showAbout: false,
+    clickPosition: undefined,
+    pickHelper: undefined,
+    selectedBlob: undefined,
+    composer: undefined,
   }),
   computed: {
     blobs() {
@@ -148,17 +155,53 @@ export default {
     foods() {
       return this.tree.all().filter((elem) => elem.type === 'food');
     },
+    status() { return this.$store.getters.status; },
+    settings() { return this.$store.getters.settings; },
+  },
+  watch: {
+    status(newValue, oldValue) {
+      if (newValue !== oldValue) {
+        this[newValue]();
+      }
+    },
+    clickPosition(coordinates) {
+      const objectSelected = this.pickHelper.pick(coordinates, this.$refs.scene.inst, this.$refs.camera.inst);
+      if (this.refreshInterval) {
+        clearInterval(this.refreshInterval);
+      }
+      if (objectSelected) {
+        this.selectedBlob = this.blobsStructs[objectSelected.userData.uuid];
+        if (this.selectedBlob) {
+          console.error(this.selectedBlob);
+          this.refreshInterval = setInterval(() => {
+            this.selectedBlob = this.blobsStructs[objectSelected.userData.uuid];
+          }, 200);
+        }
+      } else {
+        this.selectedBlob = null;
+      }
+    },
   },
   mounted() {
-    // const t0 = performance.now();
-    // const test2 = wasm.generate_random_rad();
-    // const t1 = performance.now();
-    // console.log(`Call to wasm took ${t1 - t0} milliseconds.`);
-    // const t2 = performance.now();
-    // const test = Math.random() * Math.PI * (Math.floor(Math.random() * 2) === 1 ? 1 : -1);
-    // const t3 = performance.now();
-    // console.log(`Call to js took ${t3 - t2} milliseconds.`);
+    // this.stats = new Stats();
+    // this.stats.dom.style.top = null;
+    // this.stats.dom.style.bottom = 0;
+    // this.$refs.container.appendChild(this.stats.dom);
 
+    this.getCanvasRelativePosition = (event) => {
+      const rect = this.$refs.renderer.inst.domElement.getBoundingClientRect();
+      return {
+        x: ((event.clientX - rect.left) * this.$refs.renderer.inst.domElement.width) / rect.width,
+        y: ((event.clientY - rect.top) * this.$refs.renderer.inst.domElement.height) / rect.height,
+      };
+    };
+    this.setPickPosition = (event) => {
+      const pos = this.getCanvasRelativePosition(event);
+      const x = (pos.x / this.$refs.renderer.inst.domElement.width) * 2 - 1;
+      const y = (pos.y / this.$refs.renderer.inst.domElement.height) * -2 + 1;
+      this.clickPosition = { x, y };
+    };
+    window.addEventListener('click', this.setPickPosition);
 
     this.$refs.plane.inst.rotateX(-Math.PI / 2);
     const sky = new Sky();
@@ -195,38 +238,21 @@ export default {
     }, false);
 
     document.addEventListener('visibilitychange', () => {
-      if (document.visibilityState === 'visible') {
-        this.play();
-      } else {
-        this.pause();
+      if (document.visibilityState === 'visible' && this.autoPause) {
+        this.$store.dispatch('changeStatus', 'play');
+        this.autoPause = false;
+      } else if (this.status === 'play') {
+        this.autoPause = true;
+        this.$store.dispatch('changeStatus', 'pause');
       }
     });
 
-    this.generateBlobs(2);
-    this.generateFoods(5);
-    Object.keys(this.blobsStructs).forEach((blobKey) => {
-      this.setBlobWorker(blobKey);
-    });
-    this.foodWorker = new FoodWorker();
-    this.foodWorker.addEventListener('message', () => {
-      this.generateFoods(3);
-    });
+    this.pickHelper = new PickHelper(this.$refs.renderer);
+    this.initializeSim();
   },
   methods: {
-    stop() {
-      this.tree.clear();
-      Object.keys(this.blobsWorkers).forEach((workerKey) => {
-        this.blobsWorkers[workerKey].postMessage({ type: 'kill' });
-      });
-      this.blobsWorkers = {};
-      this.blobsStructs = {};
-      this.foodsStructs = {};
-      this.foodWorker.postMessage({ type: 'kill' });
-      this.$refs.renderer.requestRender();
-    },
-    restart() {
-      this.stop();
-      console.clear();
+    initializeSim() {
+      // this.stats.begin();
       this.generateBlobs(2);
       this.generateFoods(5);
       Object.keys(this.blobsStructs).forEach((blobKey) => {
@@ -234,8 +260,25 @@ export default {
       });
       this.foodWorker = new FoodWorker();
       this.foodWorker.addEventListener('message', () => {
-        this.generateFoods(3);
+        this.generateFoods(this.settings.foodPerSpawn);
       });
+    },
+    stop() {
+      this.tree.clear();
+      Object.keys(this.blobsWorkers).forEach((workerKey) => {
+        this.blobsWorkers[workerKey].postMessage({ type: 'kill' });
+      });
+      this.foodWorker.postMessage({ type: 'kill' });
+      this.blobsWorkers = {};
+      this.blobsStructs = {};
+      this.foodsStructs = {};
+      this.$refs.renderer.requestRender();
+      // this.stats.end();
+    },
+    restart() {
+      this.stop();
+      console.clear();
+      this.initializeSim();
     },
     pause() {
       this.console('warn', 'Simulation was paused');
@@ -258,118 +301,136 @@ export default {
         blob: this.blobsStructs[blobKey],
       });
       blobWorker.addEventListener('message', (event) => {
-        if (this.blobsStructs[event.data.blob.uuid]) {
+        const blobUuid = event.data.blob.uuid;
+        if (this.blobsStructs[blobUuid]) {
           switch (event.data.type) {
             case 'move': {
-              let shouldPause;
-              this.tree.remove(this.blobsStructs[event.data.blob.uuid]);
-              if (Object.keys(this.blobsStructs[event.data.blob.uuid].objectives).length
-            && !this.foodsStructs[Object.keys(this.blobsStructs[event.data.blob.uuid].objectives)[0]]) {
+              this.tree.remove(this.blobsStructs[blobUuid]);
+              if (Object.keys(this.blobsStructs[blobUuid].objectives).length
+            && !this.foodsStructs[Object.keys(this.blobsStructs[blobUuid].objectives)[0]] && !this.blobsStructs[Object.keys(this.blobsStructs[blobUuid].objectives)[0]]) {
                 this.console('error', '👻 The food the blob had for objective has disappeared');
                 blobWorker.postMessage({
                   type: 'removeObjective',
-                  objective: { uuid: Object.keys(this.blobsStructs[event.data.blob.uuid].objectives)[0] },
+                  objective: { uuid: Object.keys(this.blobsStructs[blobUuid].objectives)[0] },
                 });
-                delete this.blobsStructs[event.data.blob.uuid].objectives[Object.keys(this.blobsStructs[event.data.blob.uuid].objectives)[0]];
-              // shouldPause = true;
+                delete this.blobsStructs[blobUuid].objectives[Object.keys(this.blobsStructs[blobUuid].objectives)[0]];
               }
               const closeBy = this.tree.search({
-                minX: this.blobsStructs[event.data.blob.uuid].x - this.blobsStructs[event.data.blob.uuid].fov,
-                minY: this.blobsStructs[event.data.blob.uuid].y - this.blobsStructs[event.data.blob.uuid].fov,
-                maxX: this.blobsStructs[event.data.blob.uuid].x + this.blobsStructs[event.data.blob.uuid].fov,
-                maxY: this.blobsStructs[event.data.blob.uuid].y + this.blobsStructs[event.data.blob.uuid].fov,
+                minX: this.blobsStructs[blobUuid].x - this.blobsStructs[blobUuid].fov,
+                minY: this.blobsStructs[blobUuid].y - this.blobsStructs[blobUuid].fov,
+                maxX: this.blobsStructs[blobUuid].x + this.blobsStructs[blobUuid].fov,
+                maxY: this.blobsStructs[blobUuid].y + this.blobsStructs[blobUuid].fov,
               });
-              if (closeBy.find((element) => element.type === 'food')) {
-                const closestFood = knn(this.tree, this.blobsStructs[event.data.blob.uuid].x, this.blobsStructs[event.data.blob.uuid].y, 1, (item) => item.type === 'food');
-                if (Math.abs(closestFood[0].x - this.blobsStructs[event.data.blob.uuid].x) < 0.1 && Math.abs(closestFood[0].y - this.blobsStructs[event.data.blob.uuid].y) < 0.1) {
-                  if (this.blobsStructs[event.data.blob.uuid].objectives[closestFood[0].uuid]) {
-                    this.console('error', '🍎 Eating objective.', closestFood[0].uuid);
+              if (closeBy.find((element) => element.type === 'food' || (element.type === 'blob' && element.uuid !== blobUuid && element.size + (element.size * 0.15) < this.blobsStructs[blobUuid].size))) {
+                const closestFood = knn(this.tree, this.blobsStructs[blobUuid].x, this.blobsStructs[blobUuid].y, 1, (item) => item.type === 'food'
+                || (item.type === 'blob' && item.uuid !== blobUuid && item.size + item.size * 0.15 < this.blobsStructs[blobUuid].size));
+                if (Math.abs(closestFood[0].x - this.blobsStructs[blobUuid].x) < 0.1 && Math.abs(closestFood[0].y - this.blobsStructs[blobUuid].y) < 0.1) {
+                  if (this.blobsStructs[blobUuid].objectives[closestFood[0].uuid]) {
+                    this.console('error', '🍎 Eating objective.', closestFood[0].uuid, closestFood[0].type);
                     this.tree.remove(closestFood[0]);
-                    delete this.foodsStructs[closestFood[0].uuid];
-                    delete this.blobsStructs[event.data.blob.uuid].objectives[closestFood[0].uuid];
+                    delete this[closestFood[0].type === 'food' ? 'foodsStructs' : 'blobsStructs'][closestFood[0].uuid];
                     let shouldDuplicate;
-                    if (this.blobsStructs[event.data.blob.uuid].life + 1 > 5) {
+                    if (this.blobsStructs[blobUuid].life + 1 > 5) {
                       shouldDuplicate = true;
                     }
-                    this.blobsStructs[event.data.blob.uuid] = {
-                      ...this.blobsStructs[event.data.blob.uuid],
-                      life: !shouldDuplicate ? this.blobsStructs[event.data.blob.uuid].life + 1 : this.blobsStructs[event.data.blob.uuid].life - 1,
+                    this.blobsStructs[blobUuid] = {
+                      ...this.blobsStructs[blobUuid],
+                      life: !shouldDuplicate ? this.blobsStructs[blobUuid].life + 1 : this.blobsStructs[blobUuid].life - 1,
                     };
+                    if (closestFood[0].type === 'blob') {
+                      this.blobsWorkers[closestFood[0].uuid].postMessage({ type: 'kill' });
+                      delete this.blobsWorkers[closestFood[0].uuid];
+                    }
+                    delete this.blobsStructs[blobUuid].objectives[closestFood[0].uuid];
                     blobWorker.postMessage({
                       type: 'removeObjective',
                       objective: closestFood[0],
                     });
-                    // shouldPause = true;
-                    this.console('error', '💙 blob\'s life:', this.blobsStructs[event.data.blob.uuid].life);
+                    this.console('error', '💙 blob\'s life:', this.blobsStructs[blobUuid].life);
                     if (shouldDuplicate) {
-                      this.generateBlobs(1, this.blobsStructs[event.data.blob.uuid]).forEach((newBlob) => {
+                      this.generateBlobs(1, this.blobsStructs[blobUuid]).forEach((newBlob) => {
                         this.setBlobWorker(newBlob.uuid);
                       });
                     }
                   }
-                } else if (!Object.keys(this.blobsStructs[event.data.blob.uuid].objectives).length) {
-                  this.console('error', '❗️ addingObjective.', closestFood[0].uuid, `angle ${-Math.atan2(closestFood[0].y - this.blobsStructs[event.data.blob.uuid].y, closestFood[0].x - this.blobsStructs[event.data.blob.uuid].x)}`);
-                  this.blobsStructs[event.data.blob.uuid] = {
-                    ...this.blobsStructs[event.data.blob.uuid],
-                    angle: -Math.atan2(closestFood[0].y - this.blobsStructs[event.data.blob.uuid].y, closestFood[0].x - this.blobsStructs[event.data.blob.uuid].x),
-                    objectives: { ...this.blobsStructs[event.data.blob.uuid].objectives, [closestFood[0].uuid]: closestFood[0] },
+                } else if (!Object.keys(this.blobsStructs[blobUuid].objectives).length) {
+                  this.console('error', '❗️ addingObjective.', closestFood[0].uuid, `angle ${-Math.atan2(closestFood[0].y - this.blobsStructs[blobUuid].y, closestFood[0].x - this.blobsStructs[blobUuid].x)}`);
+                  this.blobsStructs[blobUuid] = {
+                    ...this.blobsStructs[blobUuid],
+                    angle: -Math.atan2(closestFood[0].y - this.blobsStructs[blobUuid].y, closestFood[0].x - this.blobsStructs[blobUuid].x),
+                    objectives: { [closestFood[0].uuid]: closestFood[0] },
                   };
                   blobWorker.postMessage({
                     type: 'addObjective',
                     objective: closestFood[0],
                   });
-                // shouldPause = true;
+                } else if (Object.keys(this.blobsStructs[blobUuid].objectives).length && !this.blobsStructs[blobUuid].objectives[closestFood[0].uuid]) {
+                  blobWorker.postMessage({
+                    type: 'removeObjective',
+                    objective: { uuid: Object.keys(this.blobsStructs[blobUuid].objectives)[0] },
+                  });
+                  this.blobsStructs[blobUuid].objectives = {};
+                  this.blobsStructs[blobUuid] = {
+                    ...this.blobsStructs[blobUuid],
+                    angle: -Math.atan2(closestFood[0].y - this.blobsStructs[blobUuid].y, closestFood[0].x - this.blobsStructs[blobUuid].x),
+                    objectives: { [closestFood[0].uuid]: closestFood[0] },
+                  };
+                  blobWorker.postMessage({
+                    type: 'addObjective',
+                    objective: closestFood[0],
+                  });
                 }
+              } else if (Object.keys(this.blobsStructs[blobUuid].objectives).length) {
+                blobWorker.postMessage({
+                  type: 'removeObjective',
+                  objective: { uuid: Object.keys(this.blobsStructs[blobUuid].objectives)[0] },
+                });
+                this.blobsStructs[blobUuid].objectives = {};
               }
-              const sin = Math.abs(Math.sin(this.blobsStructs[event.data.blob.uuid].angle));
-              const newX = this.blobsStructs[event.data.blob.uuid].x + (Math.cos(this.blobsStructs[event.data.blob.uuid].angle) * 0.1);
-              const newY = this.blobsStructs[event.data.blob.uuid].angle < 0 ? this.blobsStructs[event.data.blob.uuid].y + (sin * 0.1) : this.blobsStructs[event.data.blob.uuid].y - (sin * 0.1);
+              const sin = Math.abs(Math.sin(this.blobsStructs[blobUuid].angle));
+              const newX = this.blobsStructs[blobUuid].x + (Math.cos(this.blobsStructs[blobUuid].angle) * 0.1);
+              const newY = this.blobsStructs[blobUuid].angle < 0 ? this.blobsStructs[blobUuid].y + (sin * 0.1) : this.blobsStructs[blobUuid].y - (sin * 0.1);
               if (newX < 5 && newY < 5 && newX > -5 && newY > -5) {
-                this.blobsStructs[event.data.blob.uuid] = {
-                  ...this.blobsStructs[event.data.blob.uuid],
-                  x: newX,
-                  y: newY,
-                };
+                this.blobsStructs[blobUuid].x = newX;
+                this.blobsStructs[blobUuid].y = newY;
               } else {
-                this.blobsStructs[event.data.blob.uuid] = {
-                  ...this.blobsStructs[event.data.blob.uuid],
-                  angle: this.generateRandomRadian(),
-                };
+                this.blobsStructs[blobUuid].angle = this.generateRandomRadian();
               }
-              this.tree.insert(this.blobsStructs[event.data.blob.uuid]);
-              if (shouldPause) this.pause();
+              this.tree.insert(this.blobsStructs[blobUuid]);
               break;
             }
             case 'changeDirection': {
-              if (!Object.keys(this.blobsStructs[event.data.blob.uuid].objectives).length) {
+              if (!Object.keys(this.blobsStructs[blobUuid].objectives).length) {
                 this.console('error', '⤵️ change direction');
-                this.tree.remove(this.blobsStructs[event.data.blob.uuid]);
-                this.blobsStructs[event.data.blob.uuid] = {
-                  ...this.blobsStructs[event.data.blob.uuid],
+                this.tree.remove(this.blobsStructs[blobUuid]);
+                this.blobsStructs[blobUuid] = {
+                  ...this.blobsStructs[blobUuid],
                   angle: this.generateRandomRadian(),
                 };
-                this.tree.insert(this.blobsStructs[event.data.blob.uuid]);
+                this.tree.insert(this.blobsStructs[blobUuid]);
               }
               break;
             }
             case 'looseLife': {
-              this.tree.remove(this.blobsStructs[event.data.blob.uuid]);
-              this.blobsStructs[event.data.blob.uuid] = {
-                ...this.blobsStructs[event.data.blob.uuid],
-                life: this.blobsStructs[event.data.blob.uuid].life - 1,
+              this.tree.remove(this.blobsStructs[blobUuid]);
+              this.blobsStructs[blobUuid] = {
+                ...this.blobsStructs[blobUuid],
+                life: this.blobsStructs[blobUuid].life - 1,
               };
-              this.console('error', '💙 blob\'s life:', this.blobsStructs[event.data.blob.uuid].life);
-              if (this.blobsStructs[event.data.blob.uuid].life === 0) {
-                delete this.blobsStructs[event.data.blob.uuid];
+              this.console('error', '💙 blob\'s life:', this.blobsStructs[blobUuid].life);
+              if (this.blobsStructs[blobUuid].life === 0) {
+                delete this.blobsStructs[blobUuid];
                 blobWorker.postMessage({ type: 'kill' });
                 delete this.blobsWorkers[blobKey];
+                if (this.refreshInterval) clearInterval(this.refreshInterval);
+                if (this?.selectedBlob?.uuid === blobUuid) this.selectedBlob = null;
                 if (!Object.keys(this.blobsStructs).length) {
                   this.console('warn', 'all blobs died 🤭');
                   this.$refs.renderer.requestRender();
                   this.stop();
                 }
               } else {
-                this.tree.insert(this.blobsStructs[event.data.blob.uuid]);
+                this.tree.insert(this.blobsStructs[blobUuid]);
               }
               break;
             }
@@ -391,11 +452,11 @@ export default {
           y: fromParent ? fromParent.y : this.generateRandomPosition(),
           angle: this.generateRandomRadian(),
           objectives: {},
-          fov: fromParent ? fromParent.fov + Math.random() * 0.3 * (Math.floor(Math.random() * 2) === 1 ? 1 : -1) : 3,
-          life: 4,
-          speed: fromParent ? fromParent.speed + Math.random() * 2 * (Math.floor(Math.random() * 2) === 1 ? 1 : -1) : 50,
-          size: fromParent ? fromParent.size + Math.random() * 0.3 * (Math.floor(Math.random() * 2) === 1 ? 1 : -1) : 2,
+          fov: fromParent ? fromParent.fov + Math.random() * 0.3 * (Math.floor(Math.random() * 2) === 1 ? 1 : -1) : BASE_FOV,
+          size: fromParent ? fromParent.size + Math.random() * 0.5 * (Math.floor(Math.random() * 2) === 1 ? 1 : -1) : BASE_SIZE,
         };
+        blob.speed = Math.round((blob.size * BASE_SPEED) / BASE_SIZE);
+        blob.life = Math.round((blob.size * BASE_LIFE) / BASE_SIZE);
         blobs = [...blobs, blob];
         this.blobsStructs[uuid] = blob;
       }
@@ -420,21 +481,6 @@ export default {
         this.foodsStructs = { ...this.foodsStructs, [uuid]: food };
       }
       this.tree.load(foods);
-    },
-    generateRandomRadian() {
-      // return wasm.generate_random_rad();
-      return Math.random() * Math.PI * (Math.floor(Math.random() * 2) === 1 ? 1 : -1);
-    },
-    generateRandomPosition() {
-      const random = Math.random() * 5 * (Math.floor(Math.random() * 2) === 1 ? 1 : -1);
-      return parseFloat(random.toFixed(1));
-    },
-    generatePosition(distance, phi, theta) {
-      return ({
-        x: distance * Math.cos(phi),
-        y: distance * Math.sin(phi) * Math.sin(theta),
-        z: distance * Math.sin(phi) * Math.cos(theta),
-      });
     },
     console(type = 'error', ...args) {
       if (this.consoleEnabled) console[type](args);

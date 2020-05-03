@@ -1,8 +1,10 @@
+import { BASE_LOSE_LIFE, BASE_LIFE } from 'utils/consts';
+
 let pause;
 
 let moveInterval;
 let changeDirectionInterval;
-let looseLifeInterval;
+let loseLifeInterval;
 
 let blob;
 let objectives = {};
@@ -16,7 +18,10 @@ self.addEventListener('message', (e) => {
         if (!pause) {
           self.postMessage({ type: 'move', blob });
         }
-      }, blob.speed || 60);
+      }, blob.speed);
+      loseLifeInterval = setInterval(() => {
+        if (!pause) self.postMessage({ type: 'looseLife', blob });
+      }, ((blob.life * BASE_LOSE_LIFE) / BASE_LIFE));
       break;
     }
     case 'addObjective': {
@@ -34,7 +39,7 @@ self.addEventListener('message', (e) => {
     case 'kill': {
       clearInterval(moveInterval);
       clearInterval(changeDirectionInterval);
-      clearInterval(looseLifeInterval);
+      clearInterval(loseLifeInterval);
       self.close();
       break;
     }
@@ -53,8 +58,4 @@ self.addEventListener('message', (e) => {
 
 changeDirectionInterval = setInterval(() => {
   if (!pause && !Object.keys(objectives).length) self.postMessage({ type: 'changeDirection', blob });
-}, 3000);
-
-looseLifeInterval = setInterval(() => {
-  if (!pause) self.postMessage({ type: 'looseLife', blob });
 }, 3000);
